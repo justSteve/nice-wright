@@ -423,7 +423,7 @@ jobs:
 
           ---
           _This PR is auto-managed by the Worker agent. CI must pass and Reviewer must approve before merge._" \
-              --base main \
+              --base master \
               --head "$BRANCH" \
               --label "agent-pr,automated"
             

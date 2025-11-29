@@ -6,7 +6,7 @@ on:
       - 'agent/*'    # All agent working branches
   pull_request:
     branches:
-      - main
+      - master
     types: [opened, synchronize, reopened]
 
 permissions:
@@ -166,7 +166,7 @@ jobs:
       - name: Checkout main for task metadata
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: master
           fetch-depth: 0
       
       - name: Update task CI status
@@ -240,7 +240,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: master
       
       - name: Check retry eligibility
         id: check-retry

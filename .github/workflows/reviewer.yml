@@ -3,13 +3,13 @@ name: Reviewer - PR Gate
 on:
   pull_request:
     branches:
-      - main
+      - master
     types: [opened, synchronize, reopened, ready_for_review]
   
   # Also trigger when task status changes to "review"
   push:
     branches:
-      - main
+      - master
     paths:
       - '_meta/tasks/*.json'
 
@@ -49,7 +49,7 @@ jobs:
       - name: Checkout main for task metadata
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: master
           path: main-branch
       
       - name: Load task requirements
@@ -91,7 +91,7 @@ jobs:
         id: changed-files
         run: |
           # Get list of changed files in PR
-          CHANGED=$(git diff --name-only origin/main...HEAD | jq -R -s 'split("\n") | map(select(length > 0))')
+          CHANGED=$(git diff --name-only origin/master...HEAD | jq -R -s 'split("\n") | map(select(length > 0))')
           echo "changed_files=$CHANGED" >> $GITHUB_OUTPUT
       
       - name: Validate file coverage
@@ -119,8 +119,8 @@ jobs:
         id: summarize
         run: |
           # Get diff for analysis
-          DIFF=$(git diff origin/main...HEAD --stat)
-          DIFF_CONTENT=$(git diff origin/main...HEAD)
+          DIFF=$(git diff origin/master...HEAD --stat)
+          DIFF_CONTENT=$(git diff origin/master...HEAD)
           
           # Create a summary of changes
           cat > pr-summary.md << EOF
@@ -166,13 +166,13 @@ jobs:
           fi
           
           # Check 3: No secrets in diff
-          if git diff origin/main...HEAD | grep -iE '(api[_-]?key|password|secret|token)\s*[:=]' | grep -v '\.example\|\.sample\|placeholder'; then
+          if git diff origin/master...HEAD | grep -iE '(api[_-]?key|password|secret|token)\s*[:=]' | grep -v '\.example\|\.sample\|placeholder'; then
             DECISION="REQUEST_CHANGES"
             FEEDBACK="$FEEDBACK\n- Potential secrets detected in diff"
           fi
           
           # Check 4: No debug/console statements left
-          if git diff origin/main...HEAD | grep -E '^\+.*console\.(log|debug|warn)\(' | grep -v '// allowed'; then
+          if git diff origin/master...HEAD | grep -E '^\+.*console\.(log|debug|warn)\(' | grep -v '// allowed'; then
             DECISION="COMMENT"
             FEEDBACK="$FEEDBACK\n- Debug console statements found"
           fi
@@ -226,7 +226,7 @@ jobs:
       - name: Checkout main
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: master
           fetch-depth: 0
       
       - name: Update task review metadata
@@ -310,7 +310,7 @@ jobs:
           
           # Basic checks without task context
           # 1. No obvious secrets
-          if git diff origin/main...HEAD | grep -iE '(api[_-]?key|password|secret|token)\s*[:=]' | grep -v '\.example\|\.sample'; then
+          if git diff origin/master...HEAD | grep -iE '(api[_-]?key|password|secret|token)\s*[:=]' | grep -v '\.example\|\.sample'; then
             echo "::warning::Potential secrets detected - please review"
           fi
           
