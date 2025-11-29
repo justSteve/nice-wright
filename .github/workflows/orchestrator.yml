@@ -1,0 +1,292 @@
+name: Orchestrator - Goal Decomposition & Merge
+
+on:
+  # Trigger when a new goal file is created/modified
+  push:
+    paths:
+      - '_meta/goals/*.json'
+    branches:
+      - main
+  
+  # Allow manual trigger for re-processing
+  workflow_dispatch:
+    inputs:
+      goal_id:
+        description: 'Goal ID to process (e.g., goal-005)'
+        required: false
+        type: string
+  
+  # Scheduled check for approved PRs ready to merge
+  schedule:
+    - cron: '*/5 * * * *'  # Every 5 minutes
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+env:
+  META_DIR: '_meta'
+
+jobs:
+  # ============================================================
+  # JOB 1: Decompose new goals into tasks
+  # ============================================================
+  decompose-goals:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      tasks_created: ${{ steps.decompose.outputs.tasks_created }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Identify goals to process
+        id: find-goals
+        run: |
+          if [ -n "${{ github.event.inputs.goal_id }}" ]; then
+            echo "goals=${{ github.event.inputs.goal_id }}" >> $GITHUB_OUTPUT
+          else
+            # Find goals with status "pending"
+            GOALS=$(find $META_DIR/goals -name "*.json" -exec sh -c '
+              if [ "$(jq -r .status "{}")" = "pending" ]; then
+                basename "{}" .json
+              fi
+            ' \; | tr '\n' ' ')
+            echo "goals=$GOALS" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Decompose goals into tasks
+        id: decompose
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TASKS_CREATED=""
+          
+          for GOAL_ID in ${{ steps.find-goals.outputs.goals }}; do
+            GOAL_FILE="$META_DIR/goals/${GOAL_ID}.json"
+            
+            if [ ! -f "$GOAL_FILE" ]; then
+              echo "Goal file not found: $GOAL_FILE"
+              continue
+            fi
+            
+            echo "Processing goal: $GOAL_ID"
+            
+            # Read goal details
+            GOAL_TITLE=$(jq -r '.title' "$GOAL_FILE")
+            GOAL_DESC=$(jq -r '.description' "$GOAL_FILE")
+            
+            # Read task breakdown from goal file
+            # Goals should have a "task_breakdown" array
+            TASK_COUNT=$(jq '.task_breakdown | length' "$GOAL_FILE")
+            
+            for i in $(seq 0 $(($TASK_COUNT - 1))); do
+              TASK_DATA=$(jq ".task_breakdown[$i]" "$GOAL_FILE")
+              TASK_ID=$(echo "$TASK_DATA" | jq -r '.id')
+              
+              # Create task file
+              TASK_FILE="$META_DIR/tasks/${TASK_ID}.json"
+              
+              # Build task JSON
+              cat > "$TASK_FILE" << EOF
+          {
+            "id": "$TASK_ID",
+            "parent_goal": "$GOAL_ID",
+            "status": "pending",
+            "assigned_to": null,
+            "branch": "agent/${TASK_ID}",
+            "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "requirements": $(echo "$TASK_DATA" | jq '.requirements'),
+            "attempts": [],
+            "max_attempts": $(jq -r '.config.max_attempts // 5' "$META_DIR/config/workflow.json" 2>/dev/null || echo 5),
+            "review": {
+              "reviewer_agent": null,
+              "status": "pending",
+              "feedback": []
+            }
+          }
+          EOF
+              
+              TASKS_CREATED="$TASKS_CREATED $TASK_ID"
+              
+              # Create GitHub Issue for human visibility
+              gh issue create \
+                --title "Task: $(echo "$TASK_DATA" | jq -r '.requirements.description')" \
+                --body "**Goal:** $GOAL_TITLE
+
+          **Task ID:** \`$TASK_ID\`
+          **Branch:** \`agent/${TASK_ID}\`
+
+          ## Requirements
+          $(echo "$TASK_DATA" | jq -r '.requirements.description')
+
+          ## Acceptance Criteria
+          $(echo "$TASK_DATA" | jq -r '.requirements.acceptance_criteria | map("- " + .) | join("\n")')
+
+          ---
+          _This issue is auto-managed by the Orchestrator. Do not close manually._" \
+                --label "agent-task,automated"
+              
+              echo "Created task: $TASK_ID"
+            done
+            
+            # Update goal status to "in_progress"
+            jq '.status = "in_progress" | .updated_at = now | todate' "$GOAL_FILE" > tmp.json && mv tmp.json "$GOAL_FILE"
+          done
+          
+          echo "tasks_created=$TASKS_CREATED" >> $GITHUB_OUTPUT
+      
+      - name: Commit task files
+        run: |
+          git config user.name "orchestrator-bot"
+          git config user.email "orchestrator@bot.local"
+          git add $META_DIR/tasks/*.json $META_DIR/goals/*.json
+          git diff --staged --quiet || git commit -m "orchestrator: create tasks from goals"
+          git push
+      
+      - name: Dispatch workers for new tasks
+        env:
+          GITHUB_TOKEN: ${{ secrets.AGENT_PAT }}
+        run: |
+          for TASK_ID in ${{ steps.decompose.outputs.tasks_created }}; do
+            echo "Dispatching worker for task: $TASK_ID"
+            gh api repos/${{ github.repository }}/dispatches \
+              -f event_type=worker_assign \
+              -f client_payload="{\"task_id\":\"$TASK_ID\"}"
+          done
+
+  # ============================================================
+  # JOB 2: Monitor and merge approved PRs
+  # ============================================================
+  merge-approved:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Find approved PRs from agent branches
+        id: find-prs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Find PRs from agent/* branches that are approved
+          APPROVED_PRS=$(gh pr list \
+            --state open \
+            --json number,headRefName,reviews \
+            --jq '.[] | select(.headRefName | startswith("agent/")) | select(.reviews | map(select(.state == "APPROVED")) | length > 0) | .number')
+          
+          echo "approved_prs=$APPROVED_PRS" >> $GITHUB_OUTPUT
+      
+      - name: Merge approved PRs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for PR_NUM in ${{ steps.find-prs.outputs.approved_prs }}; do
+            echo "Processing PR #$PR_NUM"
+            
+            # Get PR details
+            PR_DATA=$(gh pr view $PR_NUM --json headRefName,title)
+            BRANCH=$(echo "$PR_DATA" | jq -r '.headRefName')
+            TASK_ID=$(echo "$BRANCH" | sed 's|agent/||')
+            
+            # Check CI status
+            CI_STATUS=$(gh pr checks $PR_NUM --json state --jq '.[].state' | grep -v "SUCCESS" | head -1 || echo "SUCCESS")
+            
+            if [ "$CI_STATUS" != "SUCCESS" ]; then
+              echo "CI not passing for PR #$PR_NUM, skipping"
+              continue
+            fi
+            
+            # Squash merge
+            gh pr merge $PR_NUM --squash --delete-branch \
+              --subject "feat($TASK_ID): $(echo "$PR_DATA" | jq -r '.title')" \
+              --body "Automated merge by Orchestrator.
+
+          Task: $TASK_ID
+          PR: #$PR_NUM"
+            
+            # Update task status
+            TASK_FILE="$META_DIR/tasks/${TASK_ID}.json"
+            if [ -f "$TASK_FILE" ]; then
+              jq '.status = "complete" | .completed_at = (now | todate)' "$TASK_FILE" > tmp.json && mv tmp.json "$TASK_FILE"
+            fi
+            
+            # Close associated issue
+            ISSUE_NUM=$(gh issue list --search "Task ID: $TASK_ID" --json number --jq '.[0].number')
+            if [ -n "$ISSUE_NUM" ]; then
+              gh issue close $ISSUE_NUM --comment "Task completed and merged."
+            fi
+            
+            echo "Merged PR #$PR_NUM for task $TASK_ID"
+          done
+      
+      - name: Commit status updates
+        run: |
+          git config user.name "orchestrator-bot"
+          git config user.email "orchestrator@bot.local"
+          git pull --rebase
+          git add $META_DIR/tasks/*.json
+          git diff --staged --quiet || git commit -m "orchestrator: update completed task statuses"
+          git push
+
+  # ============================================================
+  # JOB 3: Check goal completion
+  # ============================================================
+  check-goal-completion:
+    needs: merge-approved
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Check and update goal statuses
+        run: |
+          for GOAL_FILE in $META_DIR/goals/*.json; do
+            GOAL_ID=$(basename "$GOAL_FILE" .json)
+            GOAL_STATUS=$(jq -r '.status' "$GOAL_FILE")
+            
+            if [ "$GOAL_STATUS" != "in_progress" ]; then
+              continue
+            fi
+            
+            # Check if all tasks for this goal are complete
+            ALL_COMPLETE=true
+            for TASK_FILE in $META_DIR/tasks/*.json; do
+              TASK_GOAL=$(jq -r '.parent_goal' "$TASK_FILE")
+              if [ "$TASK_GOAL" = "$GOAL_ID" ]; then
+                TASK_STATUS=$(jq -r '.status' "$TASK_FILE")
+                if [ "$TASK_STATUS" != "complete" ]; then
+                  ALL_COMPLETE=false
+                  break
+                fi
+              fi
+            done
+            
+            if [ "$ALL_COMPLETE" = true ]; then
+              echo "All tasks complete for goal: $GOAL_ID"
+              jq '.status = "complete" | .completed_at = (now | todate)' "$GOAL_FILE" > tmp.json && mv tmp.json "$GOAL_FILE"
+            fi
+          done
+      
+      - name: Commit goal status updates
+        run: |
+          git config user.name "orchestrator-bot"
+          git config user.email "orchestrator@bot.local"
+          git add $META_DIR/goals/*.json
+          git diff --staged --quiet || git commit -m "orchestrator: mark completed goals"
+          git push

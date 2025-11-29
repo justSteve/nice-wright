@@ -1,0 +1,54 @@
+{
+  "id": "goal-test-001",
+  "title": "Add Greeting Utility",
+  "description": "Create a simple greeting utility module to test the Agentic Git workflow end-to-end.",
+  "status": "pending",
+  "created_at": "2025-01-15T10:00:00Z",
+  "created_by": "human",
+  "priority": "medium",
+
+  "context": {
+    "background": "This is a test goal to validate the Orchestrator-Worker-Reviewer workflow.",
+    "constraints": [
+      "Keep implementation simple",
+      "No external dependencies required"
+    ]
+  },
+
+  "task_breakdown": [
+    {
+      "id": "task-test-001",
+      "requirements": {
+        "description": "Create a greeting utility function",
+        "acceptance_criteria": [
+          "Function accepts a name parameter",
+          "Function returns a greeting string",
+          "Exports the function for use by other modules"
+        ],
+        "files_to_modify": ["src/utils/greeting.ts"],
+        "dependencies": [],
+        "context": "Simple utility function for generating greetings."
+      }
+    },
+    {
+      "id": "task-test-002",
+      "requirements": {
+        "description": "Create a farewell utility function",
+        "acceptance_criteria": [
+          "Function accepts a name parameter",
+          "Function returns a farewell string",
+          "Exports the function for use by other modules"
+        ],
+        "files_to_modify": ["src/utils/farewell.ts"],
+        "dependencies": ["task-test-001"],
+        "context": "Simple utility function for generating farewells. Depends on greeting task completing first."
+      }
+    }
+  ],
+
+  "config": {
+    "max_attempts": 3,
+    "timeout_hours": 1,
+    "notify_on_complete": true
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "agentic-git-test",
+  "version": "1.0.0",
+  "description": "Test project for Agentic Git workflow",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "echo \"Mock test passed\" && exit 0",
+    "lint": "echo \"Mock lint passed\" && exit 0",
+    "build": "echo \"Mock build passed\" && exit 0"
+  },
+  "keywords": ["agentic", "git", "workflow", "test"],
+  "author": "Agentic Git System",
+  "license": "MIT"
+}

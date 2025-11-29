@@ -1,0 +1,47 @@
+{
+  "$schema": "./workflow.schema.json",
+  "version": "1.0.0",
+  "description": "Configuration for the Agentic Git workflow system",
+  
+  "orchestrator": {
+    "merge_strategy": "squash",
+    "auto_merge_on_approval": true,
+    "goal_check_schedule": "*/5 * * * *",
+    "require_ci_pass": true,
+    "require_review_approval": true
+  },
+  
+  "worker": {
+    "max_attempts": 5,
+    "retry_delay_seconds": 10,
+    "timeout_minutes": 30,
+    "claim_expiry_minutes": 60
+  },
+  
+  "ci": {
+    "required_checks": ["lint", "typecheck", "test"],
+    "allow_skip_on_no_changes": true,
+    "retry_on_flaky": false
+  },
+  
+  "reviewer": {
+    "auto_approve_on_ci_pass": false,
+    "require_file_coverage": true,
+    "block_on_secrets": true,
+    "block_on_debug_statements": false,
+    "allowed_debug_patterns": ["// allowed", "// keep"]
+  },
+  
+  "safety": {
+    "circuit_breaker_threshold": 3,
+    "circuit_breaker_window_minutes": 30,
+    "human_escalation_enabled": true,
+    "blocked_task_notification": true
+  },
+  
+  "branches": {
+    "main": "main",
+    "agent_prefix": "agent/",
+    "protected": ["main", "master", "production"]
+  }
+}

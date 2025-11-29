@@ -1,0 +1,8 @@
+# This directory stores CI and review logs for each task
+# Logs are organized by task ID: _meta/logs/{task-id}/
+# 
+# Example structure:
+#   _meta/logs/task-001/
+#     ├── ci-attempt-1.log
+#     ├── ci-attempt-2.log
+#     └── review-12345.md

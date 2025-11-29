@@ -1,0 +1,119 @@
+{
+  "$schema": "./registry.schema.json",
+  "version": "1.0.0",
+  "description": "Registry of all agents in the Agentic Git system",
+  
+  "agents": [
+    {
+      "id": "orchestrator-main",
+      "type": "orchestrator",
+      "description": "Decomposes goals into tasks, assigns work, and merges approved PRs",
+      "capabilities": [
+        "decompose_goals",
+        "create_tasks",
+        "assign_workers",
+        "merge_prs",
+        "update_goal_status"
+      ],
+      "trigger": {
+        "type": "workflow",
+        "workflow": "orchestrator.yml",
+        "events": ["push", "schedule", "workflow_dispatch"]
+      },
+      "permissions": {
+        "main_branch": "write",
+        "agent_branches": "read",
+        "tasks": "write",
+        "goals": "write",
+        "issues": "write",
+        "pull_requests": "write"
+      }
+    },
+    {
+      "id": "worker-general",
+      "type": "worker",
+      "description": "General-purpose code implementation worker",
+      "capabilities": [
+        "read_requirements",
+        "implement_code",
+        "create_branches",
+        "push_commits",
+        "create_prs"
+      ],
+      "specialties": ["typescript", "javascript", "python", "general"],
+      "trigger": {
+        "type": "repository_dispatch",
+        "events": ["worker_assign", "worker_retry"]
+      },
+      "permissions": {
+        "main_branch": "none",
+        "agent_branches": "write",
+        "tasks": "read",
+        "goals": "read",
+        "issues": "read",
+        "pull_requests": "write"
+      }
+    },
+    {
+      "id": "reviewer-automated",
+      "type": "reviewer",
+      "description": "Automated code review gatekeeper",
+      "capabilities": [
+        "validate_ci_status",
+        "check_file_coverage",
+        "detect_secrets",
+        "detect_debug_statements",
+        "approve_prs",
+        "request_changes"
+      ],
+      "trigger": {
+        "type": "workflow",
+        "workflow": "reviewer.yml",
+        "events": ["pull_request"]
+      },
+      "permissions": {
+        "main_branch": "none",
+        "agent_branches": "read",
+        "tasks": "write",
+        "goals": "read",
+        "issues": "read",
+        "pull_requests": "write"
+      }
+    },
+    {
+      "id": "ci-feedback",
+      "type": "ci",
+      "description": "CI runner that provides feedback loop for workers",
+      "capabilities": [
+        "run_tests",
+        "run_linter",
+        "run_typecheck",
+        "update_task_status",
+        "trigger_retries"
+      ],
+      "trigger": {
+        "type": "workflow",
+        "workflow": "ci.yml",
+        "events": ["push", "pull_request"]
+      },
+      "permissions": {
+        "main_branch": "read",
+        "agent_branches": "read",
+        "tasks": "write",
+        "goals": "read",
+        "issues": "write",
+        "pull_requests": "write"
+      }
+    }
+  ],
+  
+  "communication": {
+    "method": "file_based",
+    "paths": {
+      "tasks": "_meta/tasks/",
+      "goals": "_meta/goals/",
+      "logs": "_meta/logs/"
+    },
+    "format": "json"
+  }
+}

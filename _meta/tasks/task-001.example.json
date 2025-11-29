@@ -1,0 +1,67 @@
+{
+  "id": "task-001",
+  "parent_goal": "goal-001",
+  "status": "complete",
+  "assigned_to": "worker-12345",
+  "branch": "agent/task-001",
+  "created_at": "2025-01-15T10:05:00Z",
+  "assigned_at": "2025-01-15T10:06:00Z",
+  "completed_at": "2025-01-15T10:45:00Z",
+  
+  "requirements": {
+    "description": "Create User model with password hashing",
+    "acceptance_criteria": [
+      "User model has email, passwordHash, createdAt fields",
+      "Password is hashed before storage using bcrypt",
+      "Model includes validatePassword method"
+    ],
+    "files_to_modify": ["src/models/user.ts"],
+    "dependencies": [],
+    "context": "This is the data layer for users. Use bcrypt with cost factor 10."
+  },
+  
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "commit_sha": "a1b2c3d4e5f6",
+      "ci_status": "failed",
+      "ci_log": "_meta/logs/task-001/ci-attempt-1.log",
+      "timestamp": "2025-01-15T10:15:00Z",
+      "failure_reason": "TypeScript compilation error - missing import"
+    },
+    {
+      "attempt_number": 2,
+      "commit_sha": "b2c3d4e5f6g7",
+      "ci_status": "passed",
+      "ci_log": "_meta/logs/task-001/ci-attempt-2.log",
+      "timestamp": "2025-01-15T10:30:00Z"
+    }
+  ],
+  
+  "max_attempts": 5,
+  
+  "review": {
+    "reviewer_agent": "reviewer-67890",
+    "status": "approved",
+    "reviewed_at": "2025-01-15T10:40:00Z",
+    "feedback": [
+      {
+        "type": "comment",
+        "message": "Good use of bcrypt with appropriate cost factor",
+        "file": "src/models/user.ts",
+        "line": 15
+      }
+    ]
+  },
+  
+  "pr": {
+    "number": 42,
+    "url": "https://github.com/example/repo/pull/42",
+    "merged_at": "2025-01-15T10:45:00Z"
+  },
+  
+  "issue": {
+    "number": 101,
+    "url": "https://github.com/example/repo/issues/101"
+  }
+}

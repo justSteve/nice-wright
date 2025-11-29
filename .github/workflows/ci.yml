@@ -1,0 +1,315 @@
+name: CI - Test & Lint (Agent Feedback Loop)
+
+on:
+  push:
+    branches:
+      - 'agent/*'    # All agent working branches
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: write
+
+env:
+  META_DIR: '_meta'
+
+jobs:
+  # ============================================================
+  # JOB 1: Run all CI checks
+  # ============================================================
+  ci-checks:
+    runs-on: ubuntu-latest
+    outputs:
+      task_id: ${{ steps.extract-task.outputs.task_id }}
+      all_passed: ${{ steps.summary.outputs.all_passed }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Extract task ID from branch
+        id: extract-task
+        run: |
+          BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          if [[ "$BRANCH" == agent/* ]]; then
+            TASK_ID="${BRANCH#agent/}"
+            echo "task_id=$TASK_ID" >> $GITHUB_OUTPUT
+            echo "is_agent_branch=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_agent_branch=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+        continue-on-error: true
+      
+      - name: Install dependencies
+        id: install
+        run: |
+          if [ -f "package.json" ]; then
+            npm ci || npm install
+            echo "has_npm=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_npm=false" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+      
+      - name: Run linter
+        id: lint
+        run: |
+          if [ -f "package.json" ] && grep -q '"lint"' package.json; then
+            npm run lint 2>&1 | tee lint-output.log
+            echo "lint_status=$?" >> $GITHUB_OUTPUT
+          else
+            echo "No lint script found, skipping"
+            echo "lint_status=0" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+      
+      - name: Run type check
+        id: typecheck
+        run: |
+          if [ -f "tsconfig.json" ]; then
+            npx tsc --noEmit 2>&1 | tee typecheck-output.log
+            echo "typecheck_status=$?" >> $GITHUB_OUTPUT
+          else
+            echo "No TypeScript config found, skipping"
+            echo "typecheck_status=0" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+      
+      - name: Run tests
+        id: test
+        run: |
+          if [ -f "package.json" ] && grep -q '"test"' package.json; then
+            npm test 2>&1 | tee test-output.log
+            echo "test_status=$?" >> $GITHUB_OUTPUT
+          else
+            echo "No test script found, skipping"
+            echo "test_status=0" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+      
+      - name: Run Python tests (if applicable)
+        id: pytest
+        run: |
+          if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ]; then
+            pip install -q pytest || true
+            if [ -f "requirements.txt" ]; then
+              pip install -q -r requirements.txt || true
+            fi
+            pytest 2>&1 | tee pytest-output.log || echo "pytest_status=1" >> $GITHUB_OUTPUT
+            echo "pytest_status=${PIPESTATUS[0]:-0}" >> $GITHUB_OUTPUT
+          else
+            echo "pytest_status=0" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+      
+      - name: Summarize results
+        id: summary
+        run: |
+          LINT_STATUS="${{ steps.lint.outputs.lint_status }}"
+          TYPE_STATUS="${{ steps.typecheck.outputs.typecheck_status }}"
+          TEST_STATUS="${{ steps.test.outputs.test_status }}"
+          PYTEST_STATUS="${{ steps.pytest.outputs.pytest_status }}"
+          
+          ALL_PASSED="true"
+          FAILURES=""
+          
+          if [ "$LINT_STATUS" != "0" ]; then
+            ALL_PASSED="false"
+            FAILURES="$FAILURES lint"
+          fi
+          if [ "$TYPE_STATUS" != "0" ]; then
+            ALL_PASSED="false"
+            FAILURES="$FAILURES typecheck"
+          fi
+          if [ "$TEST_STATUS" != "0" ]; then
+            ALL_PASSED="false"
+            FAILURES="$FAILURES test"
+          fi
+          if [ "$PYTEST_STATUS" != "0" ]; then
+            ALL_PASSED="false"
+            FAILURES="$FAILURES pytest"
+          fi
+          
+          echo "all_passed=$ALL_PASSED" >> $GITHUB_OUTPUT
+          echo "failures=$FAILURES" >> $GITHUB_OUTPUT
+      
+      - name: Upload CI logs
+        if: steps.extract-task.outputs.is_agent_branch == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs-${{ steps.extract-task.outputs.task_id }}
+          path: |
+            *-output.log
+          retention-days: 7
+
+  # ============================================================
+  # JOB 2: Update task metadata on agent branches
+  # ============================================================
+  update-task-status:
+    needs: ci-checks
+    if: needs.ci-checks.outputs.task_id != ''
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout main for task metadata
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      
+      - name: Update task CI status
+        run: |
+          TASK_ID="${{ needs.ci-checks.outputs.task_id }}"
+          TASK_FILE="$META_DIR/tasks/${TASK_ID}.json"
+          ALL_PASSED="${{ needs.ci-checks.outputs.all_passed }}"
+          
+          if [ ! -f "$TASK_FILE" ]; then
+            echo "Task file not found: $TASK_FILE"
+            exit 0
+          fi
+          
+          # Determine CI status
+          if [ "$ALL_PASSED" = "true" ]; then
+            CI_STATUS="passed"
+            NEW_TASK_STATUS="review"
+          else
+            CI_STATUS="failed"
+            NEW_TASK_STATUS="in_progress"
+          fi
+          
+          # Update the last attempt's CI status
+          jq --arg ci_status "$CI_STATUS" \
+             --arg new_status "$NEW_TASK_STATUS" \
+             --arg log_path "_meta/logs/${{ needs.ci-checks.outputs.task_id }}/ci-${{ github.run_id }}.log" \
+             '
+             .attempts[-1].ci_status = $ci_status |
+             .attempts[-1].ci_log = $log_path |
+             .status = $new_status
+             ' "$TASK_FILE" > tmp.json && mv tmp.json "$TASK_FILE"
+          
+          git config user.name "ci-bot"
+          git config user.email "ci@bot.local"
+          git add "$TASK_FILE"
+          git diff --staged --quiet || git commit -m "ci: update task $TASK_ID status to $CI_STATUS"
+          git push
+      
+      - name: Save CI log to meta
+        run: |
+          TASK_ID="${{ needs.ci-checks.outputs.task_id }}"
+          LOG_DIR="$META_DIR/logs/${TASK_ID}"
+          mkdir -p "$LOG_DIR"
+          
+          cat > "$LOG_DIR/ci-${{ github.run_id }}.log" << EOF
+          CI Run: ${{ github.run_id }}
+          Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          Branch: ${{ github.head_ref || github.ref_name }}
+          Commit: ${{ github.sha }}
+          
+          Results:
+          - Lint: ${{ needs.ci-checks.outputs.failures }} 
+          - All Passed: ${{ needs.ci-checks.outputs.all_passed }}
+          
+          Workflow URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EOF
+          
+          git add "$LOG_DIR"
+          git diff --staged --quiet || git commit -m "ci: save logs for task $TASK_ID"
+          git push
+
+  # ============================================================
+  # JOB 3: Trigger worker retry on failure
+  # ============================================================
+  trigger-retry:
+    needs: [ci-checks, update-task-status]
+    if: needs.ci-checks.outputs.all_passed == 'false' && needs.ci-checks.outputs.task_id != ''
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      
+      - name: Check retry eligibility
+        id: check-retry
+        run: |
+          TASK_ID="${{ needs.ci-checks.outputs.task_id }}"
+          TASK_FILE="$META_DIR/tasks/${TASK_ID}.json"
+          
+          if [ ! -f "$TASK_FILE" ]; then
+            echo "eligible=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          ATTEMPTS=$(jq '.attempts | length' "$TASK_FILE")
+          MAX_ATTEMPTS=$(jq '.max_attempts' "$TASK_FILE")
+          
+          if [ "$ATTEMPTS" -lt "$MAX_ATTEMPTS" ]; then
+            echo "eligible=true" >> $GITHUB_OUTPUT
+            echo "attempts=$ATTEMPTS" >> $GITHUB_OUTPUT
+            echo "max_attempts=$MAX_ATTEMPTS" >> $GITHUB_OUTPUT
+          else
+            echo "eligible=false" >> $GITHUB_OUTPUT
+            echo "Max attempts reached: $ATTEMPTS/$MAX_ATTEMPTS"
+          fi
+      
+      - name: Dispatch worker retry
+        if: steps.check-retry.outputs.eligible == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.AGENT_PAT }}
+        run: |
+          TASK_ID="${{ needs.ci-checks.outputs.task_id }}"
+
+          echo "Dispatching retry for task $TASK_ID (attempt ${{ steps.check-retry.outputs.attempts }}/${{ steps.check-retry.outputs.max_attempts }})"
+
+          # Add delay to prevent rapid retries
+          sleep 10
+
+          gh api repos/${{ github.repository }}/dispatches \
+            -f event_type=worker_retry \
+            -f client_payload="{\"task_id\":\"$TASK_ID\",\"failures\":\"${{ needs.ci-checks.outputs.failures }}\"}"
+      
+      - name: Mark task as blocked (max attempts)
+        if: steps.check-retry.outputs.eligible == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TASK_ID="${{ needs.ci-checks.outputs.task_id }}"
+          TASK_FILE="$META_DIR/tasks/${TASK_ID}.json"
+          
+          jq '.status = "blocked" | .blocked_reason = "ci_max_attempts_exceeded"' "$TASK_FILE" > tmp.json && mv tmp.json "$TASK_FILE"
+          
+          git config user.name "ci-bot"
+          git config user.email "ci@bot.local"
+          git add "$TASK_FILE"
+          git commit -m "ci: mark task $TASK_ID as blocked (max attempts)"
+          git push
+          
+          # Comment on associated issue
+          ISSUE_NUM=$(gh issue list --search "Task ID: $TASK_ID" --json number --jq '.[0].number')
+          if [ -n "$ISSUE_NUM" ]; then
+            gh issue comment $ISSUE_NUM --body "**CI Failed - Max Attempts Reached**
+
+          The worker has exhausted all retry attempts (${{ steps.check-retry.outputs.max_attempts }}) without passing CI.
+
+          **Failed Checks:** ${{ needs.ci-checks.outputs.failures }}
+
+          Human intervention required. Please review the logs and either:
+          1. Fix the issue manually on branch \`agent/$TASK_ID\`
+          2. Reset the attempt counter in \`_meta/tasks/${TASK_ID}.json\`
+          3. Mark the task as \`needs_human\` for escalation
+
+          [View CI Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          fi

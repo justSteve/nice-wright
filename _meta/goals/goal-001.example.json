@@ -1,0 +1,87 @@
+{
+  "id": "goal-001",
+  "title": "Implement User Authentication System",
+  "description": "Add a complete user authentication system with JWT tokens, login/logout endpoints, and protected route middleware.",
+  "status": "pending",
+  "created_at": "2025-01-15T10:00:00Z",
+  "created_by": "human",
+  "priority": "high",
+  
+  "context": {
+    "background": "The application currently has no authentication. Users need to be able to register, login, and access protected resources.",
+    "constraints": [
+      "Must use JWT for stateless auth",
+      "Passwords must be hashed with bcrypt",
+      "Tokens expire after 24 hours"
+    ],
+    "references": [
+      "https://jwt.io/introduction",
+      "docs/api-spec.md"
+    ]
+  },
+  
+  "task_breakdown": [
+    {
+      "id": "task-001",
+      "requirements": {
+        "description": "Create User model with password hashing",
+        "acceptance_criteria": [
+          "User model has email, passwordHash, createdAt fields",
+          "Password is hashed before storage using bcrypt",
+          "Model includes validatePassword method"
+        ],
+        "files_to_modify": ["src/models/user.ts"],
+        "dependencies": [],
+        "context": "This is the data layer for users. Use bcrypt with cost factor 10."
+      }
+    },
+    {
+      "id": "task-002",
+      "requirements": {
+        "description": "Implement JWT token generation and validation",
+        "acceptance_criteria": [
+          "generateToken function creates signed JWT with user ID",
+          "validateToken function verifies and decodes tokens",
+          "Tokens include expiration time"
+        ],
+        "files_to_modify": ["src/utils/jwt.ts"],
+        "dependencies": [],
+        "context": "Use jsonwebtoken library. Secret should come from environment variable."
+      }
+    },
+    {
+      "id": "task-003",
+      "requirements": {
+        "description": "Create auth middleware for protected routes",
+        "acceptance_criteria": [
+          "Middleware extracts token from Authorization header",
+          "Returns 401 for missing or invalid tokens",
+          "Attaches user ID to request object on success"
+        ],
+        "files_to_modify": ["src/middleware/auth.ts"],
+        "dependencies": ["task-002"],
+        "context": "This middleware will be used on all protected endpoints."
+      }
+    },
+    {
+      "id": "task-004",
+      "requirements": {
+        "description": "Implement login and register API endpoints",
+        "acceptance_criteria": [
+          "POST /auth/register creates new user and returns token",
+          "POST /auth/login validates credentials and returns token",
+          "Both endpoints return appropriate error messages"
+        ],
+        "files_to_modify": ["src/routes/auth.ts"],
+        "dependencies": ["task-001", "task-002"],
+        "context": "Register should check for existing email. Login should use constant-time comparison."
+      }
+    }
+  ],
+  
+  "config": {
+    "max_attempts": 5,
+    "timeout_hours": 24,
+    "notify_on_complete": true
+  }
+}
