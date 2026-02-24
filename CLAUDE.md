@@ -1,23 +1,47 @@
-# myStuff
+# myStuff — Personal Project Management and Utilities
 
-myStuff is the enterprise workspace root zgent (in-process toward Zgent certification). It's the top-level organizer — every sibling repo lives under `c:\myStuff\` (Windows) / `/root/projects/` (WSL).
+**Zgent Status:** zgent (in-process toward Zgent certification)
+**Role:** Consumer — personal project management and enterprise utilities
+**Bead Prefix:** `ms`
 
-## Zgent Context
+## STOP — Beads Gate (Read This First)
 
-- **Enterprise role**: Workspace root, cross-project registry, infrastructure configs
+**This repo is beads-first. You MUST authorize work before doing it.**
+
+Before making ANY substantive changes (creating/modifying files, installing deps, changing config), do this:
+
+```bash
+bd ready                    # See if there is already an open bead for this work
+bd create -t "Short title"  # Create one if not — YOU own this, do not ask the user
+bd update <id> --status in_progress  # Claim it
+```
+
+When done:
+```bash
+bd close <id>               # Mark complete
+bd sync                     # Sync with git
+```
+
+Reference the bead ID in your commit messages: `[ms-xxx] description`.
+
+**No bead = no work.** Minor housekeeping (typos, status fields) is exempt. Everything else gets a bead. If in doubt, create one — it is cheap. See `.claude/rules/beads-first.md` for the full rule.
+
+**This is not optional. This is not a Gas Town thing. This is how THIS repo works, every session, every instance.**
+
+## What This Is
+
+myStuff is the enterprise workspace root zgent (in-process toward Zgent certification). It’s the top-level organizer — every sibling repo lives under `c:\myStuff\` (Windows) / `/root/projects/` (WSL).
+
+### Enterprise Role
+
+- **Workspace root**, cross-project registry, infrastructure configs
 - **Graduation status**: In-process. Standard artifacts deployed (beads-first, zgent-permissions)
 - **Unique path**: As workspace root, graduation is less about a query API and more about becoming the authoritative registry of enterprise structure
 
-### Conventions
+## What Every Claude Instance Must Understand
 
-- Beads-first: self-bead for non-trivial work, reference bead ID in commits
-- Enterprise permissions: read sibling repos, write only own path
-
----
-
-## Project Overview
-
-This is the root workspace for a composite system of applications, learning environments, and research projects. All projects are organized as siblings under this `c:\myStuff\` root directory and backed by GitHub repositories under `github.com/justSteve`.
+1. **Beads-first is non-negotiable.** Read the gate at the top of this file. Use `bd` commands. No exceptions.
+2. **Consumer permissions.** Standard zgent access — read enterprise, write own repo. See `.claude/rules/zgent-permissions.md`.
 
 ## GitHub Context
 
@@ -157,6 +181,10 @@ Most Python projects use modern tooling:
 - **Ruby/Docker**: Judge0 (infrastructure)
 - **PowerShell**: Judge0 automation scripts
 - **Azure**: Cloud infrastructure (Key Vault, VMs)
+
+## Graduation Status
+
+- **Standard artifacts deployed** — beads-first, zgent-permissions, settings.json, .gitattributes ✓
 
 ## Goals
 

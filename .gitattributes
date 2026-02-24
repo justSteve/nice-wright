@@ -1,0 +1,53 @@
+# Auto detect text files and ensure LF line endings
+* text=auto eol=lf
+
+# Explicitly declare text files
+*.md text
+*.txt text
+*.json text
+*.yaml text
+*.yml text
+*.toml text
+*.cfg text
+*.ini text
+*.sh text eol=lf
+*.bash text eol=lf
+*.zsh text eol=lf
+*.fish text eol=lf
+*.py text
+*.js text
+*.ts text
+*.jsx text
+*.tsx text
+*.css text
+*.html text
+*.xml text
+*.svg text
+*.sql text
+*.graphql text
+*.env text
+*.gitignore text
+*.gitattributes text
+*.editorconfig text
+Makefile text
+Dockerfile text
+LICENSE text
+
+# Declare binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.pdf binary
+*.zip binary
+*.tar.gz binary
+*.db binary
+*.sqlite binary
+*.db-shm binary
+*.db-wal binary
